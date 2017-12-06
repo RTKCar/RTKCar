@@ -15,7 +15,7 @@ class RTKSerial(object):
     )
     running = 1
     stop = 0
-    srvMsg = ''
+    srvMsg = list()
 
 # Styrsystem 10
 # SensorSystem 15

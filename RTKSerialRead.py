@@ -23,9 +23,8 @@ class RTKSerialRead(Thread, RTKSerial):
                     if r.match(theLine) is not None:
                         theLine = theLine.split(':', 9)
                         self.check_information(theLine)
-                        print("I got: %s and Running is: %s" % (theLine, RTKSerial.running))
-                    else:
-                        print(theLine)
+                        #print("I got: %s and Running is: %s" % (theLine, RTKSerial.running))
+
 
 
     #check_information(self, information)
@@ -38,10 +37,11 @@ class RTKSerialRead(Thread, RTKSerial):
         if information[0] == '15':
             index = [1, 2, 3]
             left, middle, right = [information[i] for i in index]
-            if int(left) < 20 or int(middle) < 20 or int(right) < 20:
-                print("left: %s middle: %s right: %s" % (left, middle, right))
-                RTKSerial.ser.write('6:0\n')
-                RTKSerial.running = 0
-            else:
-                RTKSerial.running = 1
-                print("left: %s middle: %s right: %s" % (left, middle, right))
+            print("left: %s middle: %s right: %s" % (left, middle, right))
+            #if int(left) < 20 or int(middle) < 20 or int(right) < 20:
+             #   print("left: %s middle: %s right: %s" % (left, middle, right))
+                #RTKSerial.ser.write('6:0\n')
+                #RTKSerial.running = 0
+            #else:
+                #RTKSerial.running = 1
+             #   print("left: %s middle: %s right: %s" % (left, middle, right))
