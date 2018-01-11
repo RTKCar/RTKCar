@@ -5,6 +5,7 @@ import serial
 import logging
 import time
 import multiprocessing
+from threading import Timer
 
 """
     Initiera serial variabeln ser
@@ -47,9 +48,9 @@ sock.setblocking(0)
 """
     Globala variabler
 """
-styrvinkel_max_hoger = 30
-styrvinkel_max_vanster = 90
-current_angle = 90
+styrvinkel_max_hoger = 15
+styrvinkel_max_vanster = 75
+current_angle = 45
 current_speed = 2
 car_start = '6:3:0:0:0:0:0:0:0\n'
 car_stop = '6:2:0:0:0:0:0:0:0\n'
@@ -77,6 +78,7 @@ serial_data_out = multiprocessing.Queue()
 def serial_handler():
     global ser, serial_data_in, serial_data_out
     while True:
+        logger.info('Process 1: Starts')
         readable, writable, _ = select.select([ser], [ser], [])
         for read in readable:
             if read is ser:
@@ -88,7 +90,7 @@ def serial_handler():
             data = serial_data_out.get()
             logger.info('Process 1: Serial out: %s' % data)
             ser.write(data.encode())
-
+        logger.info('Process 1: Ends')
 
 """
     process_sensor_data
@@ -97,10 +99,15 @@ def serial_handler():
     till sock_data_out
 """
 
-
 def process_sensor_data():
+    """pre: Proccessing all data serial_data_in
+    post: puts the handled data in sock_data_out
+    :return: nothing
+    """
     global stop_auto, inet_connection, current_speed, serial_data_in, sock_data_out
+    timer = Timer(1, sensor_timer)
     while True:
+        logger.info('Process 2: Starts')
         if serial_data_in.qsize() > 0:
             information = serial_data_in.get()
             information = information.split(':')
@@ -109,24 +116,64 @@ def process_sensor_data():
                 left = information[1]
                 middle = information[2]
                 right = information[3]
+                fast_list = []
+                fast_list.append(int(left))
+                fast_list.append(int(middle))
+                fast_list.append(int(right))
+                fast_list = [x for x in fast_list if x != 0]
+                fast_list.sort()
+                minimum = 0
+                if fast_list:
+                    minimum = fast_list.pop(0)
                 if str(can_id) == '15':
-                    logger.info('Thread 2: Sensor data: %s' % information)
-                    if (1 <= int(left) < 200 or 1 <= int(middle) < 200 or 1 <= int(right) < 200):
-                        if int(left) < int(middle) and int(left) < int(right):
-                            sock_data_out.put('1:' + str(left) + ',0')
-                        elif int(middle) < int(left) and int(middle) < int(right):
-                            sock_data_out.put('1:' + str(middle) + ',1')
-                        elif int(right) < int(middle) and int(right) < int(left):
-                            sock_data_out.put('1:' + str(right) + ',2')
-                        serial_data_out.put(car_stop)
-                        logger.info('Process 2: Car will stop')
-                        stop_auto = True
-                    elif not stop_auto:
-                        serial_data_out.put(str(current_speed))
-                        logger.info('Process 2: Car will start speed %s' % current_speed)
-                        stop_auto = False
-        else:
-            time.sleep(0.05)
+                    print(str(minimum))
+                    logger.info('Process 2: Sensor data: %s' % information)
+                    if minimum != 0:
+                        if minimum == int(left) and minimum < 100:
+                            print(minimum)
+                            sock_data_out.put('1:' + str(minimum) + ',0')
+                            serial_data_out.put(car_stop)
+                            logger.info('Process 2: Car will stop')
+                            stop_auto = True
+
+                            if timer.is_alive():
+                                timer.cancel()
+                            timer = Timer(2, sensor_timer)
+                            timer.start()
+
+                        elif minimum == int(middle) and minimum < 100:
+                            print(minimum)
+                            sock_data_out.put('1:' + str(minimum) + ',1')
+                            serial_data_out.put(car_stop)
+                            logger.info('Process 2: Car will stop')
+                            stop_auto = True
+
+                            if timer.is_alive():
+                                timer.cancel()
+                            timer = Timer(2, sensor_timer)
+                            timer.start()
+
+                        elif minimum == int(right) and minimum < 100:
+                            print(minimum)
+                            sock_data_out.put('1:' + str(minimum) + ',2')
+                            serial_data_out.put(car_stop)
+                            logger.info('Process 2: Car will stop')
+                            stop_auto = True
+
+                            if timer.is_alive():
+                                timer.cancel()
+                            timer = Timer(2, sensor_timer)
+                            timer.start()
+        logger.info('Process 2: Ends')
+
+
+def sensor_timer():
+    global stop_auto
+    if stop_auto:
+        serial_data_out.put(str(current_speed))
+        logger.info('Process 2: Car will start speed %s' % current_speed)
+        print("Car will start")
+        stop_auto = False
 
 
 """
@@ -137,16 +184,16 @@ def process_sensor_data():
 
 
 def pi_client():
-    global stop_auto, sock_data_in, sock_data_out
+    global sock_data_in, sock_data_out
     connected = False
     while not connected:
         try:
             sock.connect((host, port))
-
             connected = True
         except Exception as e:
             pass
     while True:
+        logger.info('Process 3: Starts')
         readable, writable, error = select.select([sock], [sock], [sock])
         for read in readable:
             if read is sock:
@@ -160,6 +207,7 @@ def pi_client():
                     data = sock_data_out.get()
                     logger.info('Process 3: Server data out: %s' % data)
                     sock.send(data.encode('utf-8'))
+        logger.info('Process 3: Ends')
 
 
 def internet(h="8.8.8.8", p=53, timeout=3):
@@ -210,18 +258,24 @@ def handle_sock_data():
     steering_thread = threading.Thread()
     global current_angle, current_speed, running
     while True:
+        logger.info('Process 4: Starts')
         if sock_data_in.qsize() > 0:
             all_messages = sock_data_in.get().split(';')
             for x in all_messages:
                 current_message = x.split(':')
                 if current_message[0] == 'START':
                     if first_time:
-                        #current_speed = 3
-                        #serial_data_out.put('6:' + str(current_speed) + ':0:0:0:0:0:0:0\n')
                         first_time = False
-                        logger.info('Process 4: Speed Change: %s' % current_speed)
+                        current_speed = 5
+                        if not stop_auto:
+                            logger.info('Process 4: Speed Change: %s' % current_speed)
+                            serial_data_out.put('6:' + str(current_speed) + ':0:0:0:0:0:0:0\n')
                     result = ''.join([i for i in current_message[1] if i.isdigit()])
+                    print("styrvinkel från aidin: " + str(result))
                     current_angle = int(result)
+                    logger.info("Real angle: " + str(current_angle))
+                    current_angle = (current_angle * -1) + 45
+                    print("current Angle: " + str(current_angle))
                     if styrvinkel_max_hoger < current_angle < styrvinkel_max_vanster:
                         data = ('10:' + str(current_angle) + ':0:0:0:0:0:0:0\n')
                         logger.info('Process 4: serial out: %s' % data)
@@ -311,8 +365,7 @@ def handle_sock_data():
                     current_speed = int(current_message[1])
                     serial_data_out.put('6:' + str(current_speed) + ':0:0:0:0:0:0:0\n')
                     logger.info('Process 4: MANUAL Change speed %s' % current_speed)
-        else:
-            time.sleep(0.01)
+        logger.info('Process 4: Ends')
 
 
 if __name__ == '__main__':
